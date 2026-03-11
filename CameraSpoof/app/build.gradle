@@ -3,12 +3,12 @@ plugins {
 }
 
 android {
-    compileSdk 34
+    compileSdk 30
 
     defaultConfig {
         applicationId "com.example.cameraspoof"
         minSdk 24
-        targetSdk 34
+        targetSdk 30  // ИЗМЕНЕНО: было 34, стало 30 (совпадает с compileSdk)
         versionCode 1
         versionName "1.0"
 
@@ -28,14 +28,13 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.10.0'
+    implementation 'androidx.appcompat:appcompat:1.2.0'
+    implementation 'com.google.android.material:material:1.4.0'  // ИЗМЕНЕНО: было 1.10.0, стало 1.6.0
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    
-    // Xposed Framework API
+
+    // Xposed Framework API - только одна строка!
     compileOnly 'de.robv.android.xposed:api:82'
-    implementation 'de.robv.android.xposed:api:82:sources'
-    
+
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'

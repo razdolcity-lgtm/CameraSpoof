@@ -39,7 +39,7 @@ public class MainActivity extends AppCompatActivity {
             spoofService.setLoopEnabled(isChecked);
         });
 
-        checkXposedInstalled();
+        //checkXposedInstalled();
         updateStatus();
     }
 
@@ -71,10 +71,33 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+//    private void enableCameraSpoofing() {
+//        if (!checkRootAccess()) {
+//            Toast.makeText(this, "Root access required", Toast.LENGTH_LONG).show();
+//            return;
+//        }
+//
+//        boolean success = spoofService.startSpoofing();
+//        if (success) {
+//            statusText.setText("Camera Spoofing Active");
+//            enableButton.setEnabled(false);
+//            disableButton.setEnabled(true);
+//            Toast.makeText(this, "Camera spoofing enabled - all apps will use virtual camera", Toast.LENGTH_LONG).show();
+//        } else {
+//            Toast.makeText(this, "Failed to enable camera spoofing", Toast.LENGTH_SHORT).show();
+//        }
+//    }
+
+
     private void enableCameraSpoofing() {
         if (!checkRootAccess()) {
             Toast.makeText(this, "Root access required", Toast.LENGTH_LONG).show();
             return;
+        }
+
+        // Принудительно создаём менеджер (если ещё не создан)
+        if (VirtualCameraManager.getInstance() == null) {
+            new VirtualCameraManager();  // создаём
         }
 
         boolean success = spoofService.startSpoofing();
@@ -82,7 +105,7 @@ public class MainActivity extends AppCompatActivity {
             statusText.setText("Camera Spoofing Active");
             enableButton.setEnabled(false);
             disableButton.setEnabled(true);
-            Toast.makeText(this, "Camera spoofing enabled - all apps will use virtual camera", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Camera spoofing enabled", Toast.LENGTH_LONG).show();
         } else {
             Toast.makeText(this, "Failed to enable camera spoofing", Toast.LENGTH_SHORT).show();
         }

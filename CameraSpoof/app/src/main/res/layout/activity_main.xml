@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: Unknown"
+        android:textSize="18sp"/>
+
+    <Button
+        android:id="@+id/enableButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enable Spoofing"
+        android:layout_marginTop="16dp"/>
+
+    <Button
+        android:id="@+id/disableButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Disable Spoofing"/>
+
+    <Button
+        android:id="@+id/selectVideoButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Select Video"/>
+
+    <Switch
+        android:id="@+id/loopSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Loop Video"
+        android:layout_marginTop="16dp"/>
+
+</LinearLayout>

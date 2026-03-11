@@ -84,7 +84,7 @@ public class VirtualLegacyCamera {
         
         for (Camera.PreviewCallback callback : currentCallbacks) {
             try {
-                callback.onPreviewFrame(frameData, this);
+                callback.onPreviewFrame(frameData, null);
                 
                 // Check if this was a one-shot callback
                 if (isOneShotCallback(callback)) {
@@ -124,7 +124,7 @@ public class VirtualLegacyCamera {
     public void autoFocus(Camera.AutoFocusCallback callback) {
         // Virtual camera simulates auto-focus
         if (callback != null) {
-            callback.onAutoFocus(true, this);
+            callback.onAutoFocus(true, null);
         }
     }
 
@@ -139,7 +139,7 @@ public class VirtualLegacyCamera {
         if (jpeg != null) {
             // Create a mock JPEG image
             byte[] mockJpeg = createMockJpegImage();
-            jpeg.onPictureTaken(mockJpeg, this);
+            jpeg.onPictureTaken(mockJpeg, null);
         }
     }
 

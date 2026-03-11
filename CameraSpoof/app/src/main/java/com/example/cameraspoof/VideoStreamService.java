@@ -8,18 +8,22 @@ import android.os.Looper;
 import android.util.Log;
 import java.io.File;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.List;
+import java.util.ArrayList;
 
 public class VideoStreamService {
     private static final String TAG = "VideoStreamService";
     private static final int FRAME_RATE = 30;
     private static final int FRAME_DELAY_MS = 1000 / FRAME_RATE;
-    
+    private static final int TARGET_WIDTH = 1920;
+    private static final int TARGET_HEIGHT = 1080;
+
     private Thread streamingThread;
     private AtomicBoolean isStreaming = new AtomicBoolean(false);
     private VideoFrameProvider frameProvider;
     private Handler mainHandler;
     private List<VideoFrameConsumer> consumers = new ArrayList<>();
-    
+
     public interface VideoFrameConsumer {
         void onFrameAvailable(byte[] frameData, int width, int height);
     }
@@ -31,23 +35,21 @@ public class VideoStreamService {
 
     public void startStreaming() {
         if (isStreaming.get()) return;
-        
+
         isStreaming.set(true);
         streamingThread = new Thread(() -> {
             Log.d(TAG, "Video streaming started");
-            
+
             while (isStreaming.get()) {
                 try {
-                    // Get next frame from video provider
                     VideoFrame frame = frameProvider.getNextFrame();
-                    
+
                     if (frame != null) {
-                        // Distribute frame to all consumers
                         distributeFrame(frame);
                     }
-                    
+
                     Thread.sleep(FRAME_DELAY_MS);
-                    
+
                 } catch (InterruptedException e) {
                     Log.d(TAG, "Streaming interrupted");
                     break;
@@ -55,16 +57,16 @@ public class VideoStreamService {
                     Log.e(TAG, "Error in streaming loop", e);
                 }
             }
-            
+
             Log.d(TAG, "Video streaming stopped");
         });
-        
+
         streamingThread.start();
     }
 
     public void stopStreaming() {
         isStreaming.set(false);
-        
+
         if (streamingThread != null) {
             streamingThread.interrupt();
             try {
@@ -94,9 +96,8 @@ public class VideoStreamService {
     }
 
     private void distributeFrame(VideoFrame frame) {
-        // Copy consumers list to avoid concurrent modification
         List<VideoFrameConsumer> currentConsumers = new ArrayList<>(consumers);
-        
+
         for (VideoFrameConsumer consumer : currentConsumers) {
             try {
                 consumer.onFrameAvailable(frame.data, frame.width, frame.height);
@@ -110,7 +111,7 @@ public class VideoStreamService {
         byte[] data;
         int width;
         int height;
-        
+
         VideoFrame(byte[] data, int width, int height) {
             this.data = data;
             this.width = width;
@@ -120,49 +121,20 @@ public class VideoStreamService {
 
     private static class VideoFrameProvider {
         private MediaMetadataRetriever retriever;
-        private List<byte[]> videoFrames;
+        private byte[] singleFrameBuffer;        // ⭐ ОДИН буфер на всё
         private int currentFrameIndex = 0;
         private boolean loopEnabled = true;
-        private int width = 1920;
-        private int height = 1080;
+        private boolean useVideoSource = false;
+        private long videoFrameCount = 0;
+
+        // Для тестового паттерна
+        private int testPatternIndex = 0;
 
         public VideoFrameProvider() {
-            videoFrames = new ArrayList<>();
-            createSyntheticFrames();
-        }
-
-        private void createSyntheticFrames() {
-            videoFrames.clear();
-            
-            // Create synthetic test pattern frames
-            for (int i = 0; i < 30; i++) {
-                byte[] frame = createTestPatternFrame(i);
-                videoFrames.add(frame);
-            }
-            
-            Log.d(TAG, "Created " + videoFrames.size() + " synthetic frames");
-        }
-
-        private byte[] createTestPatternFrame(int frameNumber) {
-            int frameSize = width * height * 3 / 2; // NV21 format
-            byte[] frame = new byte[frameSize];
-            
-            // Create moving test pattern
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
-                    int index = y * width + x;
-                    int value = (x + y + frameNumber * 10) % 256;
-                    frame[index] = (byte) value;
-                }
-            }
-            
-            // Add UV data
-            int uvStart = width * height;
-            for (int i = uvStart; i < frameSize; i++) {
-                frame[i] = (byte) 128;
-            }
-            
-            return frame;
+            // Выделяем память ОДИН РАЗ на всё приложение
+            int frameSize = TARGET_WIDTH * TARGET_HEIGHT * 3 / 2;
+            singleFrameBuffer = new byte[frameSize];
+            Log.d(TAG, "Allocated single frame buffer: " + frameSize + " bytes");
         }
 
         public void loadVideo(String videoPath) {
@@ -170,88 +142,110 @@ public class VideoStreamService {
                 if (retriever != null) {
                     retriever.release();
                 }
-                
+
                 retriever = new MediaMetadataRetriever();
                 retriever.setDataSource(videoPath);
-                
-                extractVideoFrames();
-                
+
+                // Проверяем, что видео открылось
+                String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                if (durationStr != null) {
+                    long duration = Long.parseLong(durationStr);
+                    videoFrameCount = (duration * FRAME_RATE) / 1000;
+                    useVideoSource = true;
+                    currentFrameIndex = 0;
+                    Log.d(TAG, "Video loaded: " + videoPath + ", frames: " + videoFrameCount);
+                } else {
+                    throw new Exception("Could not get video duration");
+                }
+
             } catch (Exception e) {
                 Log.e(TAG, "Error loading video: " + videoPath, e);
-                createSyntheticFrames();
+                useVideoSource = false;
+                // Оставляем тестовый паттерн
             }
         }
 
-        private void extractVideoFrames() {
-            videoFrames.clear();
-            
-            try {
-                String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-                long duration = Long.parseLong(durationStr);
-                int totalFrames = (int) (duration * FRAME_RATE / 1000);
-                
-                for (int i = 0; i < totalFrames; i++) {
-                    long timeUs = (i * 1000000L) / FRAME_RATE;
+        public VideoFrame getNextFrame() {
+            if (useVideoSource && retriever != null) {
+                // Режим видеофайла
+                try {
+                    long timeUs = (currentFrameIndex * 1000000L) / FRAME_RATE;
                     Bitmap bitmap = retriever.getFrameAtTime(timeUs);
-                    
+
                     if (bitmap != null) {
-                        byte[] frameData = bitmapToNV21(bitmap);
-                        videoFrames.add(frameData);
+                        // Конвертируем прямо в существующий буфер
+                        bitmapToNV21(bitmap, singleFrameBuffer);
+                        bitmap.recycle(); // сразу освобождаем
+
+                        currentFrameIndex++;
+                        if (currentFrameIndex >= videoFrameCount) {
+                            currentFrameIndex = loopEnabled ? 0 : (int)(videoFrameCount - 1);
+                        }
+
+                        return new VideoFrame(singleFrameBuffer, TARGET_WIDTH, TARGET_HEIGHT);
                     }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error getting video frame", e);
+                    useVideoSource = false; // падаем на тестовый паттерн
                 }
-                
-                currentFrameIndex = 0;
-                Log.d(TAG, "Extracted " + videoFrames.size() + " frames");
-                
-            } catch (Exception e) {
-                Log.e(TAG, "Error extracting frames", e);
-                createSyntheticFrames();
             }
+
+            // Режим тестового паттерна (резервный)
+            generateTestPattern(singleFrameBuffer, testPatternIndex);
+            testPatternIndex = (testPatternIndex + 1) % 30;
+
+            return new VideoFrame(singleFrameBuffer, TARGET_WIDTH, TARGET_HEIGHT);
         }
 
-        private byte[] bitmapToNV21(Bitmap bitmap) {
-            int[] pixels = new int[width * height];
-            bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
-            
-            int frameSize = width * height * 3 / 2;
-            byte[] nv21 = new byte[frameSize];
-            
-            // Convert RGB to YUV420 (NV21)
-            for (int i = 0; i < width * height; i++) {
+        private void bitmapToNV21(Bitmap bitmap, byte[] outputBuffer) {
+            // Масштабируем если нужно
+            Bitmap source = bitmap;
+            if (bitmap.getWidth() != TARGET_WIDTH || bitmap.getHeight() != TARGET_HEIGHT) {
+                source = Bitmap.createScaledBitmap(bitmap, TARGET_WIDTH, TARGET_HEIGHT, true);
+            }
+
+            int[] pixels = new int[TARGET_WIDTH * TARGET_HEIGHT];
+            source.getPixels(pixels, 0, TARGET_WIDTH, 0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+
+            // Конвертация RGB -> NV21
+            for (int i = 0; i < TARGET_WIDTH * TARGET_HEIGHT; i++) {
                 int pixel = pixels[i];
                 int r = (pixel >> 16) & 0xFF;
                 int g = (pixel >> 8) & 0xFF;
                 int b = pixel & 0xFF;
-                
-                nv21[i] = (byte) ((66 * r + 129 * g + 25 * b + 128) >> 8 + 16);
+
+                // Y = 0.299R + 0.587G + 0.114B
+                int y = ( (66 * r + 129 * g + 25 * b + 128) >> 8 ) + 16;
+                outputBuffer[i] = (byte) Math.max(0, Math.min(255, y));
             }
-            
-            // UV values
-            int uvStart = width * height;
-            for (int i = uvStart; i < frameSize; i++) {
-                nv21[i] = (byte) 128;
+
+            // UV plane (просто серый)
+            int uvStart = TARGET_WIDTH * TARGET_HEIGHT;
+            for (int i = uvStart; i < outputBuffer.length; i++) {
+                outputBuffer[i] = (byte) 128;
             }
-            
-            return nv21;
+
+            if (source != bitmap) {
+                source.recycle(); // освобождаем временный bitmap
+            }
         }
 
-        public VideoFrame getNextFrame() {
-            if (videoFrames.isEmpty()) {
-                return null;
-            }
-            
-            if (currentFrameIndex >= videoFrames.size()) {
-                if (loopEnabled) {
-                    currentFrameIndex = 0;
-                } else {
-                    return null;
+        private void generateTestPattern(byte[] buffer, int frameNum) {
+            int frameSize = TARGET_WIDTH * TARGET_HEIGHT;
+
+            // Y plane
+            for (int y = 0; y < TARGET_HEIGHT; y++) {
+                for (int x = 0; x < TARGET_WIDTH; x++) {
+                    int index = y * TARGET_WIDTH + x;
+                    int value = (x + y + frameNum * 10) % 256;
+                    buffer[index] = (byte) value;
                 }
             }
-            
-            byte[] frameData = videoFrames.get(currentFrameIndex);
-            currentFrameIndex++;
-            
-            return new VideoFrame(frameData, width, height);
+
+            // UV plane (серый)
+            for (int i = frameSize; i < buffer.length; i++) {
+                buffer[i] = (byte) 128;
+            }
         }
 
         public void setLoopEnabled(boolean enabled) {
